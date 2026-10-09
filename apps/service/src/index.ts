@@ -134,6 +134,7 @@ async function handleInvoke(
     verification = await verifyPayment(publicClient, {
       txHash: txHash as Hex,
       invoiceId: invoice.invoiceId,
+      expectedChainId: config.chain.chainId,
       expectedVault: config.expectedVault,
       expectedToken: config.chain.usdcAddress,
       expectedRecipient: config.payoutAddress,

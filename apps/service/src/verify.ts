@@ -19,6 +19,8 @@ import {decodeEventLog, type Address, type Hex, type PublicClient} from "viem";
 export interface VerificationRequest {
   txHash: Hex;
   invoiceId: string;
+  /** The chain this service settles on. Checked against the RPC explicitly. */
+  expectedChainId: number;
   expectedVault: Address;
   expectedToken: Address;
   expectedRecipient: Address;
@@ -34,6 +36,17 @@ export async function verifyPayment(
   client: PublicClient,
   req: VerificationRequest,
 ): Promise<VerificationResult> {
+  // The RPC is already chain-specific, but asserting it makes a misconfigured
+  // endpoint fail loudly here rather than silently accepting a payment that
+  // settled on a different network.
+  const chainId = await client.getChainId();
+  if (chainId !== req.expectedChainId) {
+    return {
+      ok: false,
+      reason: `Connected to chain ${chainId}, expected ${req.expectedChainId}.`,
+    };
+  }
+
   const receipt = await client.waitForTransactionReceipt({
     hash: req.txHash,
     confirmations: ARC_CONFIRMATIONS,

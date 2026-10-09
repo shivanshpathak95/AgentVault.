@@ -18,7 +18,8 @@
     "contracts:lint": "forge lint --root contracts",
     "contracts:fmt": "forge fmt --root contracts",
     "abi:sync": "node scripts/sync-abi.mjs",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "test:integration": "pnpm --filter @agentvault/integration test:integration"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

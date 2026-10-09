@@ -1,0 +1,20 @@
+{
+  "name": "@agentvault/integration",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end tests against a real local chain (Anvil).",
+  "scripts": {
+    "test:integration": "node --test \"*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentvault/shared": "workspace:*",
+    "@anthropic-ai/sdk": "^0.133.0",
+    "viem": "^2.39.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.2",
+    "typescript": "^5.9.3"
+  }
+}

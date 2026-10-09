@@ -1,6 +1,8 @@
+import {timingSafeEqual} from "node:crypto";
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
 import {addressUrl, formatNativeGasUsdc, fromBaseUnits} from "@agentvault/shared";
 import {ActivityLog} from "./activity.ts";
+import {PaymentIdempotencyStore} from "./idempotency.ts";
 import {runAgent} from "./agent/loop.ts";
 import type {ToolContext} from "./agent/tools.ts";
 import {createSessionSigner} from "./chain/session-signer.ts";
@@ -28,10 +30,19 @@ import {createServiceClient} from "./service-client.ts";
 const config = loadConfig();
 const registry = loadRegistry();
 const activity = new ActivityLog();
+const idempotency = new PaymentIdempotencyStore();
 const signer = createSessionSigner(config.chain, config.sessionPrivateKey, config.vaultAddress);
 const serviceClient = createServiceClient(config.serviceBaseUrl);
 
-const toolContext: ToolContext = {config, signer, registry, activity, serviceClient};
+const toolContext: ToolContext = {config, signer, registry, activity, serviceClient, idempotency};
+
+/** Constant-time compare, so the token cannot be recovered by timing. */
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return timingSafeEqual(ab, bb);
+}
 
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2);
@@ -125,6 +136,15 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
       }
 
       if (req.method === "POST" && path === "/api/run") {
+        // Privileged: this path signs and broadcasts payments.
+        if (config.apiToken) {
+          const header = req.headers.authorization ?? "";
+          const supplied = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+          if (!timingSafeEqualStr(supplied, config.apiToken)) {
+            sendJson(res, 401, {error: "Unauthorized."});
+            return;
+          }
+        }
         const body = await readJson(req);
         const prompt = (body as {prompt?: unknown} | null)?.prompt;
         if (typeof prompt !== "string" || prompt.trim() === "") {
@@ -144,8 +164,11 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
   })();
 });
 
-server.listen(config.port, () => {
-  console.log(`agent      http://localhost:${config.port}`);
+server.listen(config.port, config.host, () => {
+  console.log(`agent      http://${config.host}:${config.port}`);
+  console.log(
+    `auth       ${config.apiToken ? "bearer token required on /api/run" : "none (loopback only)"}`,
+  );
   console.log(`chain      ${config.chain.name} (${config.chain.chainId})`);
   console.log(`vault      ${config.vaultAddress}`);
   console.log(`session    ${signer.address}`);

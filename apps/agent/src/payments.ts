@@ -13,6 +13,7 @@ import {
 } from "@agentvault/shared";
 import type {Address, Hex} from "viem";
 import type {ActivityLog} from "./activity.ts";
+import type {PaymentIdempotencyStore} from "./idempotency.ts";
 import type {SessionSigner} from "./chain/session-signer.ts";
 import {
   QuoteMismatchError,
@@ -99,9 +100,22 @@ export interface PaymentContext {
   chain: ChainConfig;
   registry: ServiceRegistry;
   activity: ActivityLog;
+  idempotency: PaymentIdempotencyStore;
 }
 
+/**
+ * Entry point for every payment. Wraps the real work in a per-invoice
+ * idempotency guard so one invoice can never produce two transactions.
+ */
 export async function requestPayment(
+  ctx: PaymentContext,
+  input: RequestPaymentInput,
+): Promise<PaymentResult> {
+  const reference = input.reference ?? `ref_${Date.now()}`;
+  return ctx.idempotency.run(reference, () => executePayment(ctx, {...input, reference}));
+}
+
+async function executePayment(
   ctx: PaymentContext,
   input: RequestPaymentInput,
 ): Promise<PaymentResult> {

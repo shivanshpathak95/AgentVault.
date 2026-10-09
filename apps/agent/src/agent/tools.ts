@@ -8,6 +8,7 @@ import {
 import type Anthropic from "@anthropic-ai/sdk";
 import {isAddress, type Address} from "viem";
 import type {ActivityLog} from "../activity.ts";
+import type {PaymentIdempotencyStore} from "../idempotency.ts";
 import type {SessionSigner} from "../chain/session-signer.ts";
 import type {AgentConfig} from "../config.ts";
 import {requestPayment} from "../payments.ts";
@@ -182,6 +183,7 @@ export interface ToolContext {
   registry: ServiceRegistry;
   activity: ActivityLog;
   serviceClient: ServiceClient;
+  idempotency: PaymentIdempotencyStore;
 }
 
 /** Read a string field from the model's tool input, which arrives as JSON. */
@@ -211,7 +213,7 @@ export async function executeTool(
   name: string,
   input: unknown,
 ): Promise<unknown> {
-  const {config, signer, registry, activity, serviceClient} = ctx;
+  const {config, signer, registry, activity, serviceClient, idempotency} = ctx;
   const decimals = config.chain.usdcDecimals;
 
   try {
@@ -310,7 +312,7 @@ export async function executeTool(
         const amount = str(input, "amount");
 
         const result = await requestPayment(
-          {signer, chain: config.chain, registry, activity},
+          {signer, chain: config.chain, registry, activity, idempotency},
           {
             serviceId,
             recipient,

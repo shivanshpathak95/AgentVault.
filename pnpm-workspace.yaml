@@ -1,6 +1,7 @@
 packages:
   - "apps/*"
   - "packages/*"
+  - "tests/*"
 
 # Optional native addons pulled in transitively by wagmi/WalletConnect. Each has
 # a pure-JS fallback and none is on a path this project uses — viem hashes with

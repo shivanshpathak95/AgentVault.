@@ -109,6 +109,25 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  tests/integration:
+    dependencies:
+      '@agentvault/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@anthropic-ai/sdk':
+        specifier: ^0.133.0
+        version: 0.133.0(zod@4.6.5)
+      viem:
+        specifier: ^2.39.3
+        version: 2.57.4(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@5.0.10)(zod@4.6.5)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.6.2
+        version: 24.19.1
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
 packages:
 
   '@adraffy/ens-normalize@1.11.1':
