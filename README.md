@@ -39,12 +39,13 @@ Foundation complete. The enforcement layer is written and tested; the UI and age
 runtime are scaffolded with their responsibilities documented in place.
 
 - [x] Monorepo, TypeScript, Next.js, Tailwind v4, Foundry
-- [x] `AgentVault` + `AgentVaultFactory` — **21 tests passing**, lint and fmt clean
+- [x] `AgentVault` + `AgentVaultFactory` — **71 tests, 100% branch coverage**
 - [x] Shared types, USDC decimal safety, env validation, generated ABIs
-- [x] Frontend routing + layout shell
-- [ ] Deploy to Arc testnet, then mainnet
-- [ ] Operator console UI
-- [ ] Agent tool-calling loop + paid demo service
+- [x] Agent runtime: registry, payment tool, Claude tool-calling loop
+- [x] Paid demo services (Weather, Research) with on-chain payment verification
+- [x] Operator console: Overview, Agent, Policy, Activity, Services
+- [ ] **Deploy to Arc testnet, then mainnet** — nothing is deployed yet
+- [ ] End-to-end run against a live vault
 
 Full design, threat model and build plan: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
 
@@ -69,7 +70,20 @@ pnpm abi:sync          # regenerate TS ABIs from the build artifacts
 cp .env.example apps/web/.env.local
 cp .env.example contracts/.env
 
-pnpm dev:web
+# three processes: console, agent runtime, paid services
+pnpm dev:web      # http://localhost:3000
+pnpm dev:agent    # http://localhost:8787  (holds the session key)
+pnpm dev:service  # http://localhost:8788
+```
+
+### Checks
+
+```bash
+pnpm test                       # 26 TypeScript tests
+pnpm typecheck                  # all four packages
+pnpm contracts:test             # 71 Foundry tests
+pnpm --filter @agentvault/web lint
+pnpm --filter @agentvault/web build
 ```
 
 ### Deploying
@@ -89,10 +103,10 @@ mismatch. Arc mainnet is `5042`; testnet is `5042002`. Deploy to testnet first.
 
 ```
 contracts/          Foundry — the enforcement layer (the only security authority)
-packages/shared/    Types, USDC decimals, chain config, generated ABIs
-apps/web/           Next.js operator console
-apps/agent/         Claude tool-calling runtime — untrusted by design
-apps/service/       Paid demo service; verifies payments on chain itself
+packages/shared/    Types, USDC decimals, chain config, revert decoding, ABIs
+apps/web/           Next.js operator console (Overview/Agent/Policy/Activity/Services)
+apps/agent/         Claude tool-calling runtime — untrusted by design, holds the session key
+apps/service/       Paid demo services; verify payments on chain themselves
 docs/               Architecture and threat model
 ```
 
@@ -128,6 +142,17 @@ design is trying to remove.
 The contracts are unaudited hackathon code. Fund the mainnet demo accordingly.
 
 ---
+
+## Three separate identities
+
+| | Holds | Can |
+|---|---|---|
+| **Operator wallet** | The owner key, in the browser | Change policy, move funds |
+| **Vault** | The USDC | Nothing on its own — it only enforces |
+| **Session signer** | A restricted key, server-side only | Call `pay`, within policy |
+
+The session key never reaches the browser and never enters the model's context.
+No `NEXT_PUBLIC_` variable in this project carries a secret.
 
 ## License
 

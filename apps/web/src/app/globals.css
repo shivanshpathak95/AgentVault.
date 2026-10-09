@@ -1,34 +1,136 @@
 @import "tailwindcss";
 
 /**
- * Design tokens.
+ * AgentVault console.
  *
- * The palette carries the product's one idea: permitted and refused are equally
- * first-class states. A rejection is a correct outcome, so it is styled as a
- * deliberate signal, not as an error.
+ * A security console, not a dashboard: charcoal foundation, one accent, and
+ * semantic colour reserved for states that carry consequence. A refused payment
+ * is the product working, so "denied" is a legible signal rather than an alarm.
  */
 @theme {
-  --color-vault-bg: oklch(0.17 0.012 265);
-  --color-vault-surface: oklch(0.22 0.014 265);
-  --color-vault-border: oklch(0.32 0.016 265);
-  --color-vault-text: oklch(0.95 0.005 265);
-  --color-vault-muted: oklch(0.68 0.012 265);
+  /* Surfaces — near-black charcoal, stepped by elevation, not by hue. */
+  --color-base: oklch(0.158 0.008 264);
+  --color-surface: oklch(0.196 0.009 264);
+  --color-raised: oklch(0.232 0.010 264);
+  --color-overlay: oklch(0.258 0.011 264);
 
-  /* permitted by policy */
-  --color-allow: oklch(0.76 0.16 155);
-  /* refused by policy — a feature, not a failure */
-  --color-deny: oklch(0.70 0.18 25);
-  /* the human's authority */
-  --color-operator: oklch(0.78 0.14 255);
-  /* the agent's bounded authority */
-  --color-agent: oklch(0.80 0.14 85);
+  /* Hairlines. Borders do the structural work here, not shadows. */
+  --color-line: oklch(0.292 0.012 264);
+  --color-line-strong: oklch(0.372 0.015 264);
+
+  /* Type */
+  --color-ink: oklch(0.945 0.004 264);
+  --color-ink-muted: oklch(0.672 0.011 264);
+  --color-ink-subtle: oklch(0.524 0.011 264);
+
+  /* One accent, drawn from the USDC/Arc palette and desaturated for long reads. */
+  --color-accent: oklch(0.636 0.126 252);
+  --color-accent-soft: oklch(0.392 0.072 252);
+  --color-accent-ink: oklch(0.822 0.082 252);
+
+  /* Semantic — muted on purpose. */
+  --color-allow: oklch(0.682 0.104 157);
+  --color-allow-soft: oklch(0.342 0.058 157);
+  --color-deny: oklch(0.636 0.136 26);
+  --color-deny-soft: oklch(0.338 0.076 26);
+  --color-warn: oklch(0.746 0.104 76);
+  --color-warn-soft: oklch(0.368 0.058 76);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 7px;
 }
 
 :root {
   color-scheme: dark;
 }
 
+html {
+  background-color: var(--color-base);
+}
+
 body {
-  background-color: var(--color-vault-bg);
-  color: var(--color-vault-text);
+  background-color: var(--color-base);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv05", "ss01";
+}
+
+/* Numbers in tables must align; tabular figures are not decoration here. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+/* Visible focus everywhere, including keyboard-only traversal of the sidebar. */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-ink);
+}
+
+/* Scrollbars that do not fight the surface. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 5px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/*
+ * Motion is reserved for real state transitions — a pending transaction
+ * resolving, a panel opening. Nothing moves for decoration.
+ */
+@keyframes av-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.pending-pulse {
+  animation: av-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes av-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(300%); }
+}
+.indeterminate::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  width: 33%;
+  background: linear-gradient(90deg, transparent, var(--color-accent), transparent);
+  animation: av-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes av-enter {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+.row-enter {
+  animation: av-enter 160ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pending-pulse,
+  .indeterminate::after,
+  .row-enter {
+    animation: none;
+  }
 }

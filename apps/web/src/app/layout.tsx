@@ -2,6 +2,7 @@ import type {Metadata} from "next";
 import {headers} from "next/headers";
 import type {ReactNode} from "react";
 import {cookieToInitialState} from "wagmi";
+import {AppShell} from "@/components/shell/AppShell";
 import {getConfig} from "@/lib/wagmi";
 import {Providers} from "./providers";
 import "./globals.css";
@@ -19,8 +20,10 @@ export default async function RootLayout({children}: {children: ReactNode}) {
 
   return (
     <html lang="en">
-      <body className="min-h-screen antialiased">
-        <Providers initialState={initialState}>{children}</Providers>
+      <body className="min-h-screen">
+        <Providers initialState={initialState}>
+          <AppShell>{children}</AppShell>
+        </Providers>
       </body>
     </html>
   );

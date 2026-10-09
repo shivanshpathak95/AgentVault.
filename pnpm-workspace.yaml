@@ -9,6 +9,8 @@ packages:
 allowBuilds:
   bufferutil: false
   keccak: false
+  # Native resolver for the ESLint import plugin. Dev-only, prebuilt binaries.
+  unrs-resolver: true
   utf-8-validate: false
 
 minimumReleaseAgeExclude:

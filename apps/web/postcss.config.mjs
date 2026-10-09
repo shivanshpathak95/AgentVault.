@@ -1,6 +1,8 @@
 /** Tailwind CSS v4 — the PostCSS plugin lives in its own package. */
-export default {
+const config = {
   plugins: {
     "@tailwindcss/postcss": {},
   },
 };
+
+export default config;
