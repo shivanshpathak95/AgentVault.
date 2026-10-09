@@ -60,4 +60,11 @@ contract AgentVaultFactoryTest is Test {
         vm.expectRevert(AgentVaultFactory.ZeroAddress.selector);
         factory.createVault(address(0), bytes32(0));
     }
+
+    /// @dev A factory pinned to address(0) would mint vaults that can never hold
+    ///      or move anything — fail at construction rather than ship dead vaults.
+    function test_constructor_rejectsZeroToken() public {
+        vm.expectRevert(AgentVaultFactory.ZeroAddress.selector);
+        new AgentVaultFactory(address(0));
+    }
 }

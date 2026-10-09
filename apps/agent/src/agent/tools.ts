@@ -55,6 +55,11 @@ export const agentTools: Anthropic.Tool[] = [
       additionalProperties: false,
     },
   },
+  // Note: neither tool takes a `token`. The vault is denominated in one USDC
+  // address, the runtime supplies it, and the contract rejects anything else
+  // with InvalidToken. Exposing it as a model-chosen parameter would invite a
+  // confused-deputy attempt that the contract would refuse anyway — so the
+  // capability simply is not offered.
   {
     name: AGENT_TOOLS.REQUEST_PAYMENT,
     description:

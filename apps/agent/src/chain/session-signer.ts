@@ -19,9 +19,13 @@ export interface SessionSigner {
   /** The session key's address. This is the only part the model ever sees. */
   address: Address;
   publicClient: PublicClient;
-  pay(to: Address, amountBaseUnits: bigint, intentHash: Hex): Promise<Hex>;
+  pay(token: Address, to: Address, amountBaseUnits: bigint, intentHash: Hex): Promise<Hex>;
   /** `[allowed, RejectionReason]` — the reason is the uint8 enum value. */
-  preview(to: Address, amountBaseUnits: bigint): Promise<readonly [boolean, number]>;
+  preview(
+    token: Address,
+    to: Address,
+    amountBaseUnits: bigint,
+  ): Promise<readonly [boolean, number]>;
   gasBalance(): Promise<bigint>;
 }
 
@@ -57,22 +61,27 @@ export function createSessionSigner(
     publicClient,
 
     /** Submit a payment. Reverts carry the policy reason; callers must decode it. */
-    async pay(to: Address, amountBaseUnits: bigint, intentHash: Hex): Promise<Hex> {
+    async pay(
+      token: Address,
+      to: Address,
+      amountBaseUnits: bigint,
+      intentHash: Hex,
+    ): Promise<Hex> {
       return walletClient.writeContract({
         address: vault,
         abi: agentVaultAbi,
         functionName: "pay",
-        args: [to, amountBaseUnits, intentHash],
+        args: [token, to, amountBaseUnits, intentHash],
       });
     },
 
     /** Free, read-only policy check. Never a grant of authority — `pay` re-checks. */
-    async preview(to: Address, amountBaseUnits: bigint) {
+    async preview(token: Address, to: Address, amountBaseUnits: bigint) {
       return publicClient.readContract({
         address: vault,
         abi: agentVaultAbi,
         functionName: "previewPay",
-        args: [account.address, to, amountBaseUnits],
+        args: [account.address, token, to, amountBaseUnits],
       }) as Promise<readonly [boolean, number]>;
     },
 

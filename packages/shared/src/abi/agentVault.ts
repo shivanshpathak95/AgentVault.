@@ -186,8 +186,26 @@ export const agentVaultAbi = [
   },
   {
     "type": "function",
+    "name": "paused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pay",
     "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      },
       {
         "name": "to",
         "type": "address",
@@ -223,6 +241,11 @@ export const agentVaultAbi = [
           },
           {
             "name": "sessionKey",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "token",
             "type": "address",
             "internalType": "address"
           },
@@ -268,6 +291,11 @@ export const agentVaultAbi = [
     "inputs": [
       {
         "name": "sessionKey",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "token",
         "type": "address",
         "internalType": "address"
       },
@@ -330,6 +358,19 @@ export const agentVaultAbi = [
   },
   {
     "type": "function",
+    "name": "setPaused",
+    "inputs": [
+      {
+        "name": "paused_",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setRecipient",
     "inputs": [
       {
@@ -341,6 +382,29 @@ export const agentVaultAbi = [
         "name": "recipient",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setRecipients",
+    "inputs": [
+      {
+        "name": "sessionKey",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "recipients",
+        "type": "address[]",
+        "internalType": "address[]"
       },
       {
         "name": "allowed",
@@ -366,7 +430,7 @@ export const agentVaultAbi = [
   },
   {
     "type": "function",
-    "name": "updateSessionPolicy",
+    "name": "updatePolicy",
     "inputs": [
       {
         "name": "sessionKey",
@@ -463,6 +527,19 @@ export const agentVaultAbi = [
   },
   {
     "type": "event",
+    "name": "PauseSet",
+    "inputs": [
+      {
+        "name": "paused",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "PaymentExecuted",
     "inputs": [
       {
@@ -475,6 +552,12 @@ export const agentVaultAbi = [
         "name": "to",
         "type": "address",
         "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "token",
+        "type": "address",
+        "indexed": false,
         "internalType": "address"
       },
       {
@@ -500,32 +583,7 @@ export const agentVaultAbi = [
   },
   {
     "type": "event",
-    "name": "RecipientSet",
-    "inputs": [
-      {
-        "name": "sessionKey",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "recipient",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "allowed",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "SessionCreated",
+    "name": "PolicyUpdated",
     "inputs": [
       {
         "name": "sessionKey",
@@ -556,7 +614,32 @@ export const agentVaultAbi = [
   },
   {
     "type": "event",
-    "name": "SessionPolicyUpdated",
+    "name": "RecipientUpdated",
+    "inputs": [
+      {
+        "name": "sessionKey",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "allowed",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SessionCreated",
     "inputs": [
       {
         "name": "sessionKey",
@@ -619,7 +702,7 @@ export const agentVaultAbi = [
   },
   {
     "type": "error",
-    "name": "ExceedsDailyLimit",
+    "name": "DailyLimitExceeded",
     "inputs": [
       {
         "name": "attempted",
@@ -672,17 +755,28 @@ export const agentVaultAbi = [
   },
   {
     "type": "error",
+    "name": "InvalidToken",
+    "inputs": [
+      {
+        "name": "attempted",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "expected",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "NotImplemented",
     "inputs": []
   },
   {
     "type": "error",
     "name": "NotOwner",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotSessionKey",
     "inputs": []
   },
   {
@@ -698,22 +792,49 @@ export const agentVaultAbi = [
   },
   {
     "type": "error",
+    "name": "SessionAlreadyExists",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "SessionExpired",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "expiredAt",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "nowTs",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
   },
   {
     "type": "error",
-    "name": "SessionRevoked_",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "SessionUnknown",
+    "name": "SessionIsRevoked",
     "inputs": []
   },
   {
     "type": "error",
     "name": "TransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnauthorizedAgent",
+    "inputs": [
+      {
+        "name": "caller",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "VaultPaused",
     "inputs": []
   },
   {

@@ -200,19 +200,38 @@ Per session key:
 
 Plus `allowedRecipients[sessionKey][address] → bool`.
 
-### Enforcement — `pay(to, amount, intentHash)`
+### Enforcement — `pay(token, to, amount, intentHash)`
 
-Callable **only** by a session key. Checks, in order, each with a distinct custom error:
+The agent's request is exactly `(token, recipient, amount)`. Callable **only** by a
+session key. Checks, in order, each with a distinct custom error:
 
-1. `exists` → else `SessionUnknown`
-2. `!revoked` → else `SessionRevoked`
+0. `!paused` → else `VaultPaused`
+1. `exists` → else `UnauthorizedAgent`
+2. `!revoked` → else `SessionIsRevoked`
 3. `block.timestamp < expiresAt` → else `SessionExpired`
-4. `allowedRecipients[key][to]` → else `RecipientNotAllowed`
-5. `amount <= maxPerTx` → else `ExceedsMaxPerTx`
-6. `spentInWindow + amount <= dailyLimit` → else `ExceedsDailyLimit`
+4. `token == USDC` → else `InvalidToken`
+5. `allowedRecipients[key][to]` → else `RecipientNotAllowed`
+6. `amount != 0` → else `ZeroAmount`
+7. `amount <= maxPerTx` → else `ExceedsMaxPerTx`
+8. `spentInWindow + amount <= dailyLimit` → else `DailyLimitExceeded`
+9. `balance >= amount` → else `InsufficientBalance`
 
-Then: roll the window if the day changed, add to `spentInWindow`, `transfer()` the USDC,
-emit `PaymentExecuted(sessionKey, to, amount, intentHash, newSpentInWindow)`.
+Then: roll the window if the day changed, add to `spentInWindow`, emit
+`PaymentExecuted(sessionKey, to, token, amount, intentHash, newSpentInWindow)`, and
+`transfer()` the USDC.
+
+### Why there is no `PaymentRejected` event
+
+A refused payment **reverts**, and a reverted transaction's logs are discarded — so such
+an event could never be observed, and emitting one would be theatre. Rejections are
+surfaced two other ways instead:
+
+- **`previewPay`** returns a deterministic `RejectionReason` as a `view`, costing nothing.
+- **The revert itself** carries a specific custom error whose 4-byte selector the backend
+  decodes (`ERROR_NAME_TO_REASON` in `packages/shared/src/types.ts`).
+
+A test (`test_rejectedPayment_emitsNoLogsAndChangesNoState`) pins this: it asserts a
+refused payment emits zero logs and leaves balance and spend accounting untouched.
 
 **Ordering matters for the demo.** Checks run cheapest-and-most-explanatory first so the
 revert reason names the *actual* policy violation rather than an incidental one.
@@ -365,9 +384,9 @@ Claude final turn: answers the user, citing what it spent.
  4. User ──► agent: "buy the report"
  5. agent ──► service: GET /report
     service ──► agent: 402 { invoiceId: "inv_42", priceUsdc: "12.50", payTo: 0xSERVICE }
- 6. agent ──► vault.previewPay(0xAGENT, 0xSERVICE, 12.5e6)  [view, free]
+ 6. agent ──► vault.previewPay(0xAGENT, USDC, 0xSERVICE, 12.5e6)  [view, free]
                           → (true, NONE)
- 7. agent ──► vault.pay(0xSERVICE, 12.5e6, keccak("inv_42"))
+ 7. agent ──► vault.pay(USDC, 0xSERVICE, 12.5e6, keccak("inv_42"))
                           signed by SESSION KEY, gas paid in USDC
     ┌─ AgentVault.pay ─────────────────────────────────────┐
     │  exists        ✓                                     │
@@ -411,7 +430,7 @@ The prompt-injection scenario, which is the demo's centrepiece.
  7. agent ──► vault.previewPay(...) → (false, RECIPIENT_NOT_ALLOWED)
     [even if the agent skips the preview, step 8 is identical]
 
- 8. agent ──► vault.pay(0xATTACKER, 200e6, ...)
+ 8. agent ──► vault.pay(USDC, 0xATTACKER, 200e6, ...)
     ┌─ AgentVault.pay ─────────────────────────────────────┐
     │  exists        ✓                                     │
     │  !revoked      ✓                                     │
@@ -437,15 +456,22 @@ The prompt-injection scenario, which is the demo's centrepiece.
 
 | Blocked flow | Check | Custom error | `RejectionReason` |
 |---|---|---|---|
-| Unauthorized recipient | `allowedRecipients[key][to]` | `RecipientNotAllowed` | `RECIPIENT_NOT_ALLOWED` |
-| Amount exceeds maxPerTx | `amount <= maxPerTx` | `ExceedsMaxPerTx` | `EXCEEDS_MAX_PER_TX` |
-| Daily limit exceeded | `spent + amount <= dailyLimit` | `ExceedsDailyLimit` | `EXCEEDS_DAILY_LIMIT` |
+| Vault frozen | `!paused` | `VaultPaused` | `VAULT_PAUSED` |
+| Unknown / unauthorized key | `exists` | `UnauthorizedAgent` | `UNAUTHORIZED_AGENT` |
+| Revoked session | `!revoked` | `SessionIsRevoked` | `SESSION_REVOKED` |
 | Expired session | `now < expiresAt` | `SessionExpired` | `SESSION_EXPIRED` |
-| Revoked session | `!revoked` | `SessionRevoked` | `SESSION_REVOKED` |
-| Unknown key | `exists` | `SessionUnknown` | `SESSION_UNKNOWN` |
+| Wrong token | `token == USDC` | `InvalidToken` | `INVALID_TOKEN` |
+| Unauthorized recipient | `allowedRecipients[key][to]` | `RecipientNotAllowed` | `RECIPIENT_NOT_ALLOWED` |
+| Zero amount | `amount != 0` | `ZeroAmount` | `ZERO_AMOUNT` |
+| Amount exceeds maxPerTx | `amount <= maxPerTx` | `ExceedsMaxPerTx` | `EXCEEDS_MAX_PER_TX` |
+| Daily limit exceeded | `spent + amount <= dailyLimit` | `DailyLimitExceeded` | `DAILY_LIMIT_EXCEEDED` |
 | Vault underfunded | `balance >= amount` | `InsufficientBalance` | `INSUFFICIENT_BALANCE` |
 
 Each is a separate test in `AgentVault.t.sol`, and each is a separate button in the demo.
+
+> `SessionIsRevoked` is named differently from the `SessionRevoked` **event** only
+> because Solidity will not allow an error and an event to share an identifier. The event
+> keeps the plain name because the indexer depends on it.
 
 ---
 

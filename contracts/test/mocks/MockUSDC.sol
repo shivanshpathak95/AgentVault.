@@ -29,11 +29,11 @@ contract MockUSDC {
         return true;
     }
 
-    function transfer(address to, uint256 amount) external returns (bool) {
+    function transfer(address to, uint256 amount) public virtual returns (bool) {
         return _transfer(msg.sender, to, amount);
     }
 
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    function transferFrom(address from, address to, uint256 amount) public virtual returns (bool) {
         uint256 a = allowance[from][msg.sender];
         require(a >= amount, "allowance");
         if (a != type(uint256).max) allowance[from][msg.sender] = a - amount;

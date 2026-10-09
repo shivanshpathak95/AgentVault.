@@ -20,6 +20,7 @@ export interface VerificationRequest {
   txHash: Hex;
   invoiceId: string;
   expectedVault: Address;
+  expectedToken: Address;
   expectedRecipient: Address;
   expectedMinAmount: bigint;
   expectedIntentHash: Hex;
@@ -60,15 +61,21 @@ export async function verifyPayment(
 
     if (decoded.eventName !== "PaymentExecuted") continue;
 
-    const {sessionKey, to, amount, intentHash} = decoded.args as {
+    const {sessionKey, to, token, amount, intentHash} = decoded.args as {
       sessionKey: Address;
       to: Address;
+      token: Address;
       amount: bigint;
       intentHash: Hex;
     };
 
     if (to.toLowerCase() !== req.expectedRecipient.toLowerCase()) {
       return {ok: false, reason: "Payment was sent to a different recipient."};
+    }
+    // Settle only in the token actually quoted, so a payment in some other
+    // asset the vault might one day support cannot discharge a USDC invoice.
+    if (token.toLowerCase() !== req.expectedToken.toLowerCase()) {
+      return {ok: false, reason: "Payment was made in a different token."};
     }
     if (amount < req.expectedMinAmount) {
       return {ok: false, reason: "Payment is below the quoted price."};
