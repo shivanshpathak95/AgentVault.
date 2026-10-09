@@ -1,0 +1,60 @@
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+libs = ["lib"]
+
+solc = "0.8.30"
+
+# Arc targets the PRAGUE hard fork.
+# https://docs.arc.io/arc/references/evm-compatibility
+# Foundry 1.8.x defaults to "osaka" — leaving the default would emit opcodes Arc
+# does not implement. Do not change this without re-reading Arc's EVM docs.
+evm_version = "prague"
+
+optimizer = true
+optimizer_runs = 200
+
+# Custom errors carry the rejection reason to the agent and the UI, so revert
+# strings must survive into the ABI.
+bytecode_hash = "none"
+
+fs_permissions = [{ access = "read", path = "./out" }]
+
+[profile.default.fuzz]
+runs = 512
+
+[lint]
+# Both of these are load-bearing in AgentVault and reviewed as safe:
+#
+#   block-timestamp  The policy IS time-based — session expiry and the daily
+#                    spend window. Arc gives second-granularity proposer
+#                    wall-clock timestamps that are not strictly monotonic
+#                    (docs.arc.io EVM differences), so the day window uses coarse
+#                    `timestamp / 1 days` buckets that tolerate small skew. A
+#                    validator cannot profit from nudging it: the only effect is
+#                    rolling a spend window at most marginally early, bounded by
+#                    one day's limit. See threat T-14.
+#
+#   unsafe-typecast  Two casts, both guarded by a preceding check:
+#                    `uint64(block.timestamp / 1 days)` cannot overflow uint64
+#                    for ~5e11 years, and `uint128(amount)` is only reached after
+#                    `amount > s.maxPerTx` has reverted, and maxPerTx is uint128.
+#
+#   require-revert-in-loop  createSession validates each recipient as it writes
+#                    it. The loop is owner-only and bounded by the owner's own
+#                    calldata; rejecting the whole batch on a bad entry is the
+#                    intended behaviour, not a partial allowlist.
+exclude_lints = ["block-timestamp", "unsafe-typecast", "require-revert-in-loop"]
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = false
+int_types = "long"
+
+# Named RPC endpoints: `forge script ... --rpc-url arc_testnet`
+[rpc_endpoints]
+arc_mainnet = "${ARC_MAINNET_RPC_URL}"
+arc_testnet = "${ARC_TESTNET_RPC_URL}"

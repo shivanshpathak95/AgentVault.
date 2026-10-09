@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+/**
+ * Design tokens.
+ *
+ * The palette carries the product's one idea: permitted and refused are equally
+ * first-class states. A rejection is a correct outcome, so it is styled as a
+ * deliberate signal, not as an error.
+ */
+@theme {
+  --color-vault-bg: oklch(0.17 0.012 265);
+  --color-vault-surface: oklch(0.22 0.014 265);
+  --color-vault-border: oklch(0.32 0.016 265);
+  --color-vault-text: oklch(0.95 0.005 265);
+  --color-vault-muted: oklch(0.68 0.012 265);
+
+  /* permitted by policy */
+  --color-allow: oklch(0.76 0.16 155);
+  /* refused by policy — a feature, not a failure */
+  --color-deny: oklch(0.70 0.18 25);
+  /* the human's authority */
+  --color-operator: oklch(0.78 0.14 255);
+  /* the agent's bounded authority */
+  --color-agent: oklch(0.80 0.14 85);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--color-vault-bg);
+  color: var(--color-vault-text);
+}

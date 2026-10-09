@@ -1,0 +1,25 @@
+{
+  "name": "agentvault",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Policy-controlled USDC smart wallet for autonomous AI agents, on Arc.",
+  "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "dev:web": "pnpm --filter @agentvault/web dev",
+    "dev:agent": "pnpm --filter @agentvault/agent dev",
+    "dev:service": "pnpm --filter @agentvault/service dev",
+    "contracts:build": "forge build --root contracts",
+    "contracts:test": "forge test --root contracts -vvv",
+    "contracts:lint": "forge lint --root contracts",
+    "contracts:fmt": "forge fmt --root contracts",
+    "abi:sync": "node scripts/sync-abi.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

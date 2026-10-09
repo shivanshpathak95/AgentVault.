@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Optional native addons pulled in transitively by wagmi/WalletConnect. Each has
+# a pure-JS fallback and none is on a path this project uses — viem hashes with
+# @noble/hashes, not the native keccak binding. Declining them keeps installs
+# fast and avoids needing a C toolchain to clone the repo.
+allowBuilds:
+  bufferutil: false
+  keccak: false
+  utf-8-validate: false

@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# env — NEVER commit. .env.example is the only tracked env file.
+.env
+.env.*
+!.env.example
+
+# next
+.next/
+out/
+next-env.d.ts
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+# contracts/lib is NOT ignored: forge-std is a git submodule and its gitlink
+# must stay tracked, or a fresh clone cannot build. Clone with --recursive, or
+# run `git submodule update --init --recursive`.
+
+# editor / tooling local state
+.claude/settings.local.json
+.claude/*.tmp.*
+
+# logs / os
+*.log
+npm-debug.log*
+.DS_Store
