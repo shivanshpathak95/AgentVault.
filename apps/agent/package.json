@@ -7,11 +7,12 @@
     "dev": "node --env-file=.env --watch src/index.ts",
     "start": "node --env-file=.env src/index.ts",
     "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\""
   },
   "dependencies": {
     "@agentvault/shared": "workspace:*",
-    "@anthropic-ai/sdk": "^0.70.0",
+    "@anthropic-ai/sdk": "^0.133.0",
     "viem": "^2.39.3"
   },
   "devDependencies": {

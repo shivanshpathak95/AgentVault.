@@ -1,90 +1,239 @@
-import {createServer} from "node:http";
+import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
 import {
-  ConfigError,
-  parseChainConfig,
-  requiredAddress,
+  SERVICE_CATALOG,
+  SERVICE_IDS,
+  arcChain,
+  fromBaseUnits,
+  isServiceId,
   toBaseUnits,
-  type ChainConfig,
+  type ServiceId,
+  type ServiceQuote,
+  type ServiceResult,
 } from "@agentvault/shared";
-import type {Address} from "viem";
+import {createPublicClient, http as viemHttp, type Hex, type PublicClient} from "viem";
+import {loadConfig} from "./config.ts";
+import {execute} from "./handlers.ts";
+import {optionalString, readJson, requireString, sendJson} from "./http.ts";
+import {InvoiceStore} from "./invoices.ts";
+import {verifyPayment} from "./verify.ts";
 
 /**
- * The paid demo service.
+ * The paid demo services — Weather (0.01 USDC) and Research (0.02 USDC).
  *
- * A deliberately independent third party: it trusts neither the agent nor the
- * operator console, and settles invoices only against on-chain events it reads
- * itself (see verify.ts).
+ * These are a deliberately independent third party. They trust neither the
+ * agent nor the operator console: the only thing they believe is a settled
+ * `PaymentExecuted` event they read from the chain themselves. An agent that
+ * lies about having paid gets nothing.
  *
- * PHASE 4 adds the two routes:
- *   GET  /report            → 402 { invoiceId, priceUsdc, payTo }
- *   POST /report/redeem     → verify txHash on chain, then deliver
+ * Flow per request:
+ *
+ *   POST /api/services/:id/quote   { param }              -> 402 + invoice
+ *   (agent pays through the vault)
+ *   POST /api/services/:id/invoke  { invoiceId, txHash }  -> verify -> result
  */
 
-function required(name: string): string {
-  const v = process.env[name]?.trim();
-  if (!v) throw new ConfigError(`Missing required environment variable ${name}. See .env.example.`);
-  return v;
-}
+const config = loadConfig();
+const invoices = new InvoiceStore();
 
-interface ServiceConfig {
-  port: number;
-  chain: ChainConfig;
-  payoutAddress: Address;
-  priceBaseUnits: bigint;
-  priceDisplay: string;
-  expectedVault: Address;
-}
+const publicClient: PublicClient = createPublicClient({
+  chain: arcChain(config.chain),
+  transport: viemHttp(config.chain.rpcUrl),
+});
 
-const config: ServiceConfig = (() => {
-  const chain = parseChainConfig({
-    chainId: process.env.ARC_CHAIN_ID,
-    name: process.env.NEXT_PUBLIC_ARC_NETWORK_NAME ?? "Arc",
-    rpcUrl: process.env.ARC_RPC_URL,
-    wsUrl: process.env.NEXT_PUBLIC_ARC_WS_URL,
-    explorerUrl: process.env.NEXT_PUBLIC_ARC_EXPLORER_URL,
-    usdcAddress: process.env.USDC_ADDRESS ?? process.env.NEXT_PUBLIC_USDC_ADDRESS,
-    usdcDecimals: process.env.NEXT_PUBLIC_USDC_DECIMALS ?? "6",
-  });
-
-  const priceDisplay = required("SERVICE_PRICE_USDC");
-
+function catalogResponse() {
   return {
-    port: Number(process.env.SERVICE_PORT ?? 8788),
-    chain,
-    payoutAddress: requiredAddress(process.env.SERVICE_PAYOUT_ADDRESS, "SERVICE_PAYOUT_ADDRESS"),
-    // Parsed through the shared helper so the service and the vault can never
-    // disagree about what "12.50" means.
-    priceBaseUnits: toBaseUnits(priceDisplay, chain.usdcDecimals),
-    priceDisplay,
-    expectedVault: requiredAddress(process.env.EXPECTED_VAULT_ADDRESS, "EXPECTED_VAULT_ADDRESS"),
+    payTo: config.payoutAddress,
+    token: config.chain.usdcAddress,
+    chainId: config.chain.chainId,
+    services: SERVICE_IDS.map((id) => SERVICE_CATALOG[id]),
   };
-})();
+}
 
-const server = createServer((req, res) => {
-  if (req.url === "/health") {
-    res.writeHead(200, {"content-type": "application/json"});
-    res.end(
-      JSON.stringify({
-        ok: true,
-        price: config.priceDisplay,
-        payTo: config.payoutAddress,
-        chainId: config.chain.chainId,
-      }),
-    );
+async function handleQuote(
+  res: ServerResponse,
+  serviceId: ServiceId,
+  body: unknown,
+): Promise<void> {
+  const descriptor = SERVICE_CATALOG[serviceId];
+  const param = optionalString(body, descriptor.parameter.name) ?? optionalString(body, "param");
+
+  if (!param) {
+    sendJson(res, 400, {
+      error: `Missing "${descriptor.parameter.name}". ${descriptor.parameter.description}`,
+    });
     return;
   }
 
-  res.writeHead(404, {"content-type": "application/json"});
-  res.end(JSON.stringify({error: "not found"}));
+  invoices.prune();
+  const invoice = invoices.issue(
+    serviceId,
+    param,
+    descriptor.priceUsdc,
+    toBaseUnits(descriptor.priceUsdc, config.chain.usdcDecimals),
+  );
+
+  const quote: ServiceQuote = {
+    invoiceId: invoice.invoiceId,
+    serviceId,
+    priceUsdc: invoice.priceUsdc,
+    token: config.chain.usdcAddress,
+    payTo: config.payoutAddress,
+    intentHash: invoice.intentHash,
+    expiresAt: invoice.expiresAt,
+  };
+
+  // 402 Payment Required is the honest status code: the request is understood
+  // and well-formed, it simply has not been paid for yet.
+  sendJson(res, 402, quote);
+}
+
+async function handleInvoke(
+  res: ServerResponse,
+  serviceId: ServiceId,
+  body: unknown,
+): Promise<void> {
+  let invoiceId: string;
+  let txHash: string;
+  try {
+    invoiceId = requireString(body, "invoiceId");
+    txHash = requireString(body, "txHash");
+  } catch (err) {
+    sendJson(res, 400, {error: err instanceof Error ? err.message : String(err)});
+    return;
+  }
+
+  const invoice = invoices.get(invoiceId);
+  if (!invoice) {
+    sendJson(res, 404, {error: "Unknown or expired invoice. Request a new quote."});
+    return;
+  }
+  if (invoice.serviceId !== serviceId) {
+    sendJson(res, 400, {error: "This invoice was issued for a different service."});
+    return;
+  }
+  if (invoice.redeemedTxHash) {
+    sendJson(res, 409, {
+      error: "This invoice has already been settled. One payment buys one result.",
+      settledBy: invoice.redeemedTxHash,
+    });
+    return;
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+    sendJson(res, 400, {error: "txHash must be a 0x-prefixed 32-byte hash."});
+    return;
+  }
+  if (invoices.isTxUsed(txHash as Hex)) {
+    sendJson(res, 409, {error: "That transaction has already settled another invoice."});
+    return;
+  }
+
+  // The actual gate. Everything above is bookkeeping; this is what makes the
+  // service safe to run against an untrusted agent.
+  let verification;
+  try {
+    verification = await verifyPayment(publicClient, {
+      txHash: txHash as Hex,
+      invoiceId: invoice.invoiceId,
+      expectedVault: config.expectedVault,
+      expectedToken: config.chain.usdcAddress,
+      expectedRecipient: config.payoutAddress,
+      expectedMinAmount: invoice.priceBaseUnits,
+      expectedIntentHash: invoice.intentHash,
+    });
+  } catch (err) {
+    // A verification that could not complete is not a verification that passed.
+    sendJson(res, 502, {
+      error: `Could not verify payment on chain: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+
+  if (!verification.ok) {
+    sendJson(res, 402, {error: `Payment not accepted: ${verification.reason}`});
+    return;
+  }
+
+  // Claim the invoice before doing the work, so two concurrent requests with
+  // the same receipt cannot both be served.
+  if (!invoices.redeem(invoice.invoiceId, txHash as Hex)) {
+    sendJson(res, 409, {error: "This invoice was settled by a concurrent request."});
+    return;
+  }
+
+  const result: ServiceResult = {
+    serviceId,
+    invoiceId: invoice.invoiceId,
+    paidTxHash: txHash as Hex,
+    paidUsdc: fromBaseUnits(verification.amount, config.chain.usdcDecimals),
+    data: execute(serviceId, invoice.param),
+  };
+
+  console.log(
+    JSON.stringify({
+      at: new Date().toISOString(),
+      event: "service.delivered",
+      serviceId,
+      invoiceId: invoice.invoiceId,
+      txHash,
+      paidUsdc: result.paidUsdc,
+      payer: verification.payer,
+    }),
+  );
+
+  sendJson(res, 200, result);
+}
+
+const server = createServer((req: IncomingMessage, res: ServerResponse) => {
+  void (async () => {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+    const path = url.pathname.replace(/\/+$/, "") || "/";
+
+    if (req.method === "OPTIONS") {
+      sendJson(res, 204, {});
+      return;
+    }
+
+    try {
+      if (req.method === "GET" && path === "/health") {
+        sendJson(res, 200, {ok: true, chainId: config.chain.chainId, invoices: invoices.size});
+        return;
+      }
+
+      if (req.method === "GET" && path === "/api/services") {
+        sendJson(res, 200, catalogResponse());
+        return;
+      }
+
+      const match = /^\/api\/services\/([a-z]+)\/(quote|invoke)$/.exec(path);
+      if (req.method === "POST" && match) {
+        const [, rawId, action] = match;
+        if (!rawId || !isServiceId(rawId)) {
+          sendJson(res, 404, {error: `Unknown service "${rawId}".`});
+          return;
+        }
+        const body = await readJson(req);
+        if (action === "quote") await handleQuote(res, rawId, body);
+        else await handleInvoke(res, rawId, body);
+        return;
+      }
+
+      sendJson(res, 404, {error: "Not found."});
+    } catch (err) {
+      sendJson(res, 500, {error: err instanceof Error ? err.message : String(err)});
+    }
+  })();
 });
 
 server.listen(config.port, () => {
   console.log(`service    http://localhost:${config.port}`);
-  console.log(`price      ${config.priceDisplay} USDC`);
+  console.log(`chain      ${config.chain.name} (${config.chain.chainId})`);
   console.log(`payTo      ${config.payoutAddress}`);
   console.log(`vault      ${config.expectedVault}`);
+  for (const id of SERVICE_IDS) {
+    console.log(`  ${id.padEnd(9)} ${SERVICE_CATALOG[id].priceUsdc} USDC`);
+  }
   console.log(
-    `\n   Reminder: ${config.payoutAddress} must be on the session's on-chain\n` +
-      `   recipient allowlist, or every payment to it is refused by design.\n`,
+    `\n   ${config.payoutAddress} must be on the session's on-chain recipient\n` +
+      `   allowlist, or every payment to it is refused by design.\n`,
   );
 });

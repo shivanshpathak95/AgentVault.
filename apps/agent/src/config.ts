@@ -1,4 +1,9 @@
-import {parseChainConfig, requiredAddress, ConfigError, type ChainConfig} from "@agentvault/shared";
+import {
+  ConfigError,
+  parseChainConfig,
+  requiredAddress,
+  type ChainConfig,
+} from "@agentvault/shared";
 import type {Address, Hex} from "viem";
 
 export interface AgentConfig {
@@ -21,20 +26,26 @@ export function loadConfig(): AgentConfig {
   const sessionKey = required("AGENT_SESSION_PRIVATE_KEY");
   if (!/^0x[0-9a-fA-F]{64}$/.test(sessionKey)) {
     throw new ConfigError(
-      "AGENT_SESSION_PRIVATE_KEY must be a 0x-prefixed 32-byte hex key. Generate one with `cast wallet new`.",
+      "AGENT_SESSION_PRIVATE_KEY must be a 0x-prefixed 32-byte hex key. Generate one with " +
+        "`cast wallet new`. This must NOT be the operator's key — see docs/ARCHITECTURE.md.",
     );
   }
 
+  const port = Number(process.env.AGENT_PORT ?? 8787);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new ConfigError(`AGENT_PORT must be a positive integer, got "${process.env.AGENT_PORT}".`);
+  }
+
   return {
-    port: Number(process.env.AGENT_PORT ?? 8787),
+    port,
     chain: parseChainConfig({
       chainId: process.env.ARC_CHAIN_ID,
-      name: process.env.NEXT_PUBLIC_ARC_NETWORK_NAME ?? "Arc",
+      name: process.env.ARC_NETWORK_NAME ?? "Arc",
       rpcUrl: process.env.ARC_RPC_URL,
-      wsUrl: process.env.NEXT_PUBLIC_ARC_WS_URL,
-      explorerUrl: process.env.NEXT_PUBLIC_ARC_EXPLORER_URL,
-      usdcAddress: process.env.USDC_ADDRESS ?? process.env.NEXT_PUBLIC_USDC_ADDRESS,
-      usdcDecimals: process.env.NEXT_PUBLIC_USDC_DECIMALS ?? "6",
+      wsUrl: process.env.ARC_WS_URL,
+      explorerUrl: process.env.ARC_EXPLORER_URL,
+      usdcAddress: process.env.USDC_ADDRESS,
+      usdcDecimals: process.env.USDC_DECIMALS ?? "6",
     }),
     vaultAddress: requiredAddress(process.env.VAULT_ADDRESS, "VAULT_ADDRESS"),
     sessionPrivateKey: sessionKey as Hex,

@@ -161,15 +161,30 @@ export interface VaultStatus {
   allowedRecipients: Address[];
 }
 
-/** A ledger row for /activity. Rejections are first-class, not error logs. */
+/**
+ * A ledger row. Rejections are first-class records, not error logs — the whole
+ * claim of the product is that refusals happen, so they are recorded with the
+ * same weight as settlements.
+ */
 export interface ActivityEntry {
-  kind: "executed" | "rejected";
-  at: number;
-  to: Address;
+  id: string;
+  /** ISO 8601. */
+  timestamp: string;
+  status: "executed" | "rejected" | "failed";
+  serviceId?: string;
+  serviceName?: string;
+  /** Decimal USDC. */
   amount: string;
+  token: Address;
+  recipient: Address;
   reference: string;
   txHash?: Hex;
+  explorerUrl?: string;
+  /** Present when status is "rejected". */
   reason?: RejectionReasonName;
+  /** Human-readable outcome, including the numbers that bound. */
+  message?: string;
+  detail?: Record<string, string>;
 }
 
 /** Tool names exposed to the model. There is deliberately no policy-write tool. */

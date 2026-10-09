@@ -17,4 +17,6 @@ export * from "./types.ts";
 export * from "./usdc.ts";
 export * from "./env.ts";
 export * from "./chain.ts";
+export * from "./services.ts";
+export * from "./revert.ts";
 export * from "./abi/index.ts";

@@ -10,7 +10,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit"
+    "build": "tsc --noEmit",
+    "test": "node --test \"test/*.test.ts\""
   },
   "dependencies": {
     "viem": "^2.39.3"
