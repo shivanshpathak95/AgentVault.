@@ -170,7 +170,18 @@ export interface ActivityEntry {
   id: string;
   /** ISO 8601. */
   timestamp: string;
-  status: "executed" | "rejected" | "failed";
+  /**
+   * executed     confirmed on chain with a success receipt
+   * rejected     refused — by backend validation or by the contract — and no
+   *              funds moved
+   * failed       never reached the chain (RPC/nonce/gas fault), or was mined
+   *              and reverted (then `txHash` is set and `stage` says so)
+   * unconfirmed  submitted, but confirmation was not observed. NOT a success
+   *              and NOT safe to retry: it may still settle.
+   */
+  status: "executed" | "rejected" | "failed" | "unconfirmed";
+  /** Where the attempt stopped. Distinguishes a backend refusal from a revert. */
+  stage?: PaymentStage;
   serviceId?: string;
   serviceName?: string;
   /** Decimal USDC. */
@@ -185,7 +196,32 @@ export interface ActivityEntry {
   /** Human-readable outcome, including the numbers that bound. */
   message?: string;
   detail?: Record<string, string>;
+  /** What happened when the paid result was collected. Set after payment. */
+  serviceStatus?: "delivered" | "failed";
+  serviceMessage?: string;
 }
+
+/**
+ * The stage a payment attempt reached. A reverted transaction keeps no logs,
+ * so this application-level field is the only record of where a refusal
+ * happened.
+ *
+ *   backend_validation   refused by the agent before any chain call
+ *   contract_preview     the contract's previewPay said no (view call, no tx)
+ *   contract_simulation  eth_call of pay() reverted (no tx sent)
+ *   submission_error     the transaction could not be sent
+ *   onchain_revert       mined, then reverted (a real hash exists; no funds moved)
+ *   awaiting_receipt     sent; confirmation not observed
+ *   confirmed            mined with a success receipt
+ */
+export type PaymentStage =
+  | "backend_validation"
+  | "contract_preview"
+  | "contract_simulation"
+  | "submission_error"
+  | "onchain_revert"
+  | "awaiting_receipt"
+  | "confirmed";
 
 /** Tool names exposed to the model. There is deliberately no policy-write tool. */
 export const AGENT_TOOLS = {

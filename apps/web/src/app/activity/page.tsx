@@ -8,13 +8,14 @@ import {Icon} from "@/components/ui/Icon";
 import {Button, Callout, EmptyState, PageHeader, Panel} from "@/components/ui/Panel";
 import {useAgentActivity} from "@/hooks/useVault";
 
-type Filter = "all" | "executed" | "rejected" | "failed";
+type Filter = "all" | "executed" | "rejected" | "failed" | "unconfirmed";
 
 const FILTERS: {id: Filter; label: string}[] = [
   {id: "all", label: "All"},
   {id: "executed", label: "Settled"},
   {id: "rejected", label: "Blocked by policy"},
-  {id: "failed", label: "Failed to submit"},
+  {id: "failed", label: "Failed"},
+  {id: "unconfirmed", label: "Unconfirmed"},
 ];
 
 export default function ActivityPage() {
@@ -31,6 +32,7 @@ export default function ActivityPage() {
       executed: entries.filter((e) => e.status === "executed").length,
       rejected: entries.filter((e) => e.status === "rejected").length,
       failed: entries.filter((e) => e.status === "failed").length,
+      unconfirmed: entries.filter((e) => e.status === "unconfirmed").length,
     }),
     [entries],
   );

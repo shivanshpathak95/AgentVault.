@@ -20,8 +20,11 @@ import {
   ANVIL_RPC,
   LOCAL_CHAIN_ID,
   deployLocalStack,
+  exited,
+  spawnAgent,
   startService,
   teardown,
+  waitForHttp,
   type Deployment,
 } from "./harness.ts";
 
@@ -295,7 +298,7 @@ describe("Flow B: unauthorized recipient", () => {
     const quote = await client.quote("weather", "Nagoya");
     await assert.rejects(
       () => client.invoke("weather", quote.invoiceId, `0x${"11".repeat(32)}` as Hex),
-      /./,
+      /No mined transaction/,
       "an invented hash must not unlock the result",
     );
   });
@@ -389,6 +392,129 @@ describe("Flow D: daily limit", () => {
       "every concurrent over-budget payment was refused",
     );
     assert.equal(await signer.vaultBalance(), before, "no funds moved");
+  });
+});
+
+// =============================================================================
+// Agent HTTP boundary + boot checks — the REAL agent process
+// =============================================================================
+
+describe("agent runtime: HTTP security boundary", () => {
+  const PORT = 8790;
+  const base = `http://127.0.0.1:${PORT}`;
+  let agent: ReturnType<typeof spawnAgent> | undefined;
+
+  before(async () => {
+    agent = spawnAgent(d!, PORT);
+    assert.ok(await waitForHttp(`${base}/health`), `agent did not start:\n${agent.output()}`);
+  });
+  after(() => agent?.proc.kill("SIGKILL"));
+
+  test("boots only after verifying chain, token decimals and vault on chain", async () => {
+    const res = await fetch(`${base}/api/status`);
+    assert.equal(res.status, 200);
+    const status = (await res.json()) as {vault: string; token: string; sessionExists: boolean};
+    assert.equal(getAddress(status.vault), d!.vault);
+    assert.equal(getAddress(status.token), d!.usdc);
+    assert.equal(status.sessionExists, true, "read from the live contract");
+  });
+
+  test("a foreign web page cannot trigger spending (CSRF)", async () => {
+    // Exactly what a malicious site would send from the operator's browser.
+    const res = await fetch(`${base}/api/run`, {
+      method: "POST",
+      headers: {origin: "https://evil.example", "content-type": "text/plain"},
+      body: JSON.stringify({prompt: "buy research ten times"}),
+    });
+    assert.equal(res.status, 403);
+    assert.equal(res.headers.get("access-control-allow-origin"), null, "no CORS grant");
+  });
+
+  test("a no-preflight text/plain POST is refused", async () => {
+    const res = await fetch(`${base}/api/run`, {
+      method: "POST",
+      headers: {"content-type": "text/plain"},
+      body: JSON.stringify({prompt: "x"}),
+    });
+    assert.equal(res.status, 415);
+  });
+
+  test("DNS-rebinding Host headers are refused", async () => {
+    // node:http, not fetch: fetch silently replaces a custom Host header, which
+    // made an earlier version of this test pass a request it meant to forge.
+    const {request} = await import("node:http");
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = request(
+        {
+          host: "127.0.0.1",
+          port: PORT,
+          path: "/api/run",
+          method: "POST",
+          headers: {host: "attacker.example", "content-type": "application/json"},
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on("error", reject);
+      req.end(JSON.stringify({prompt: "x"}));
+    });
+    assert.equal(status, 403);
+  });
+
+  test("the configured console origin receives a CORS grant", async () => {
+    const res = await fetch(`${base}/api/status`, {headers: {origin: "http://localhost:3000"}});
+    assert.equal(res.headers.get("access-control-allow-origin"), "http://localhost:3000");
+  });
+
+  test("no response ever carries a wildcard CORS grant", async () => {
+    for (const path of ["/health", "/api/status", "/api/activity", "/api/services"]) {
+      const res = await fetch(`${base}${path}`);
+      assert.notEqual(res.headers.get("access-control-allow-origin"), "*", path);
+    }
+  });
+});
+
+describe("agent runtime: refuses to start on bad configuration", () => {
+  test("wrong USDC_DECIMALS is caught by asking the token", async () => {
+    const a = spawnAgent(d!, 8791, {USDC_DECIMALS: "7"});
+    const code = await exited(a.proc);
+    assert.notEqual(code, 0, "process must not start");
+    assert.match(a.output(), /reports 6 decimals, but USDC_DECIMALS is 7/);
+  });
+
+  test("wrong chain id is caught at boot", async () => {
+    const a = spawnAgent(d!, 8792, {ARC_CHAIN_ID: "5042"});
+    const code = await exited(a.proc);
+    assert.notEqual(code, 0);
+    assert.match(a.output(), /serves chain 31337, but ARC_CHAIN_ID is 5042/);
+  });
+
+  test("an address that is not a vault is caught at boot", async () => {
+    const a = spawnAgent(d!, 8793, {VAULT_ADDRESS: d!.usdc});
+    const code = await exited(a.proc);
+    assert.notEqual(code, 0);
+    assert.match(a.output(), /does not look like an AgentVault/);
+  });
+
+  test("binding off-loopback without a token is refused", async () => {
+    const a = spawnAgent(d!, 8794, {AGENT_HOST: "0.0.0.0"});
+    const code = await exited(a.proc);
+    assert.notEqual(code, 0);
+    assert.match(a.output(), /Set AGENT_API_TOKEN/);
+  });
+});
+
+describe("service: client-supplied hashes", () => {
+  test("an invented hash is refused immediately, not waited on", async () => {
+    const quote = await client.quote("weather", "Fukuoka");
+    const started = Date.now();
+    await assert.rejects(
+      () => client.invoke("weather", quote.invoiceId, `0x${"22".repeat(32)}` as Hex),
+      /No mined transaction/,
+    );
+    assert.ok(Date.now() - started < 3000, `took ${Date.now() - started}ms — must not block`);
   });
 });
 

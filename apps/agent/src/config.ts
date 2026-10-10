@@ -12,6 +12,8 @@ export interface AgentConfig {
   host: string;
   /** Bearer token required on spending endpoints. Mandatory off-loopback. */
   apiToken: string | undefined;
+  /** Browser origins allowed to call the API (the operator console). */
+  allowedOrigins: string[];
   chain: ChainConfig;
   vaultAddress: Address;
   sessionPrivateKey: Hex;
@@ -62,10 +64,19 @@ export function loadConfig(): AgentConfig {
     );
   }
 
+  // Browser origins permitted to call this API. Loopback binding alone does
+  // not stop a malicious web page in the operator's own browser from posting
+  // to 127.0.0.1 — see the CSRF note in index.ts.
+  const allowedOrigins = (process.env.AGENT_ALLOWED_ORIGINS ?? "http://localhost:3000,http://127.0.0.1:3000")
+    .split(",")
+    .map((o) => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean);
+
   return {
     port,
     host,
     apiToken,
+    allowedOrigins,
     chain: parseChainConfig({
       chainId: process.env.ARC_CHAIN_ID,
       name: process.env.ARC_NETWORK_NAME ?? "Arc",

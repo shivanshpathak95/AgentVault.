@@ -3,6 +3,8 @@ import {
   SERVICE_CATALOG,
   SERVICE_IDS,
   arcChain,
+  redactSecrets,
+  verifyNetwork,
   fromBaseUnits,
   isServiceId,
   toBaseUnits,
@@ -39,6 +41,9 @@ const publicClient: PublicClient = createPublicClient({
   chain: arcChain(config.chain),
   transport: viemHttp(config.chain.rpcUrl),
 });
+
+// Refuse to start against the wrong chain, token or vault.
+await verifyNetwork(publicClient, config.chain, config.expectedVault);
 
 function catalogResponse() {
   return {
@@ -143,8 +148,9 @@ async function handleInvoke(
     });
   } catch (err) {
     // A verification that could not complete is not a verification that passed.
+    const message = err instanceof Error ? err.message : String(err);
     sendJson(res, 502, {
-      error: `Could not verify payment on chain: ${err instanceof Error ? err.message : String(err)}`,
+      error: `Could not verify payment on chain: ${redactSecrets(message, config.chain.rpcUrl)}`,
     });
     return;
   }
@@ -220,7 +226,8 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 
       sendJson(res, 404, {error: "Not found."});
     } catch (err) {
-      sendJson(res, 500, {error: err instanceof Error ? err.message : String(err)});
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 500, {error: redactSecrets(message, config.chain.rpcUrl)});
     }
   })();
 });

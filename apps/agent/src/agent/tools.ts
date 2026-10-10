@@ -9,6 +9,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import {isAddress, type Address} from "viem";
 import type {ActivityLog} from "../activity.ts";
 import type {PaymentIdempotencyStore} from "../idempotency.ts";
+import type {QuoteLedger} from "../quotes.ts";
 import type {SessionSigner} from "../chain/session-signer.ts";
 import type {AgentConfig} from "../config.ts";
 import {requestPayment} from "../payments.ts";
@@ -184,6 +185,7 @@ export interface ToolContext {
   activity: ActivityLog;
   serviceClient: ServiceClient;
   idempotency: PaymentIdempotencyStore;
+  quotes: QuoteLedger;
 }
 
 /** Read a string field from the model's tool input, which arrives as JSON. */
@@ -213,7 +215,7 @@ export async function executeTool(
   name: string,
   input: unknown,
 ): Promise<unknown> {
-  const {config, signer, registry, activity, serviceClient, idempotency} = ctx;
+  const {config, signer, registry, activity, serviceClient, idempotency, quotes} = ctx;
   const decimals = config.chain.usdcDecimals;
 
   try {
@@ -272,6 +274,7 @@ export async function executeTool(
         }
 
         const quote = await serviceClient.quote(serviceId, param);
+        quotes.remember(quote);
         return {
           invoiceId: quote.invoiceId,
           serviceId: quote.serviceId,
@@ -311,12 +314,36 @@ export async function executeTool(
         const recipient = address(input, "recipient");
         const amount = str(input, "amount");
 
+        // The model's arguments are untrusted. Pay only an invoice this agent
+        // actually obtained, and only on the terms that were quoted.
+        const quote = quotes.get(invoiceId);
+        if (!quote || quote.serviceId !== serviceId) {
+          return {
+            status: "rejected",
+            stage: "backend_validation",
+            message:
+              `No live quote ${JSON.stringify(invoiceId)} for "${serviceId}" was obtained by this ` +
+              `agent. Call request_service_quote first; invented or expired invoice ids are refused.`,
+            invoiceId,
+          };
+        }
+        if (recipient.toLowerCase() !== quote.payTo.toLowerCase() || amount !== quote.priceUsdc) {
+          return {
+            status: "rejected",
+            stage: "backend_validation",
+            message:
+              `Payment arguments do not match quote ${invoiceId} (quoted ${quote.priceUsdc} USDC ` +
+              `to ${quote.payTo}). Pay exactly what was quoted.`,
+            invoiceId,
+          };
+        }
+
         const result = await requestPayment(
           {signer, chain: config.chain, registry, activity, idempotency},
           {
             serviceId,
-            recipient,
-            amount,
+            recipient: quote.payTo,
+            amount: quote.priceUsdc,
             // The runtime supplies the token; the model never chooses it.
             token: config.chain.usdcAddress,
             reference: invoiceId,
@@ -337,9 +364,11 @@ export async function executeTool(
 
         return {
           status: result.status,
+          stage: result.stage,
           reason: result.reason,
           message: result.message,
           detail: result.detail,
+          ...(result.txHash ? {txHash: result.txHash} : {}),
           invoiceId,
           guidance:
             "This payment was not made. Do not retry it unchanged. Report the reason to the " +
@@ -354,8 +383,25 @@ export async function executeTool(
         if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
           return {error: "txHash must be a 0x-prefixed 32-byte hash."};
         }
-        const result = await serviceClient.invoke(serviceId, invoiceId, txHash as `0x${string}`);
-        return result;
+        try {
+          const result = await serviceClient.invoke(
+            serviceId,
+            invoiceId,
+            txHash as `0x${string}`,
+          );
+          activity.annotateService(invoiceId, {serviceStatus: "delivered"});
+          return result;
+        } catch (err) {
+          // The payment already settled and is not reversed. Record the
+          // delivery failure as its own fact rather than overwriting it.
+          const message = err instanceof Error ? err.message : String(err);
+          activity.annotateService(invoiceId, {serviceStatus: "failed", serviceMessage: message});
+          return {
+            error: message,
+            paymentStatus:
+              "The payment itself settled on chain and was NOT reversed. Only delivery failed.",
+          };
+        }
       }
 
       default:

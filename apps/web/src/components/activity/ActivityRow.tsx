@@ -29,6 +29,8 @@ export function ActivityRow({
           <Icon.Check size={14} className="text-allow" />
         ) : entry.status === "rejected" ? (
           <Icon.Deny size={14} className="text-deny" />
+        ) : entry.status === "unconfirmed" ? (
+          <Icon.Clock size={14} className="text-warn" />
         ) : (
           <Icon.Alert size={14} className="text-warn" />
         )}
@@ -40,6 +42,9 @@ export function ActivityRow({
             {entry.serviceName ?? "Payment"}
           </span>
           <StatusPill status={entry.status} />
+          {entry.serviceStatus === "failed" ? (
+            <span className="text-[10px] uppercase tracking-wider text-warn">service failed</span>
+          ) : null}
         </span>
 
         <span className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[11px] text-ink-subtle">

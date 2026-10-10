@@ -74,6 +74,15 @@ function PaymentOutcome({output}: {output: PaymentToolResult}) {
     );
   }
 
+  if (output.status === "unconfirmed") {
+    return (
+      <div className="flex flex-col gap-1.5 rounded-md border border-warn-soft bg-warn-soft/10 px-3 py-2.5">
+        <StatusPill status="unconfirmed" />
+        <p className="text-[11px] leading-5 text-ink-muted">{output.message}</p>
+      </div>
+    );
+  }
+
   if (output.status === "rejected" || output.status === "failed") {
     return (
       <div className="flex flex-col gap-1.5 rounded-md border border-deny-soft bg-deny-soft/10 px-3 py-2.5">
@@ -87,7 +96,11 @@ function PaymentOutcome({output}: {output: PaymentToolResult}) {
         </div>
         <p className="text-[11px] leading-5 text-ink-muted">{output.message}</p>
         <p className="text-[11px] leading-4 text-ink-subtle">
-          No funds moved and no transaction exists — the contract refused before transferring.
+          {isTxHash(output.txHash)
+            ? "No funds moved. The transaction was mined and reverted, so its logs were discarded."
+            : output.stage === "backend_validation"
+              ? "Refused by the agent backend before reaching the chain. No transaction exists."
+              : "No funds moved and no transaction exists — refused before sending."}
         </p>
       </div>
     );

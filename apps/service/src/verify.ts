@@ -1,5 +1,11 @@
 import {ARC_CONFIRMATIONS, agentVaultAbi} from "@agentvault/shared";
-import {decodeEventLog, type Address, type Hex, type PublicClient} from "viem";
+import {
+  TransactionReceiptNotFoundError,
+  decodeEventLog,
+  type Address,
+  type Hex,
+  type PublicClient,
+} from "viem";
 
 /**
  * Independent on-chain payment verification.
@@ -47,10 +53,20 @@ export async function verifyPayment(
     };
   }
 
-  const receipt = await client.waitForTransactionReceipt({
-    hash: req.txHash,
-    confirmations: ARC_CONFIRMATIONS,
-  });
+  // One lookup, never a wait. The hash is CLIENT-SUPPLIED: waiting on it would
+  // let anyone hold a request open indefinitely with an invented hash. The
+  // agent only redeems after confirming its own receipt, and Arc finality is
+  // deterministic (ARC_CONFIRMATIONS = 1), so an existing receipt is final.
+  let receipt;
+  try {
+    receipt = await client.getTransactionReceipt({hash: req.txHash});
+  } catch (err) {
+    if (err instanceof TransactionReceiptNotFoundError) {
+      return {ok: false, reason: "No mined transaction with that hash."};
+    }
+    throw err;
+  }
+  void ARC_CONFIRMATIONS;
 
   if (receipt.status !== "success") {
     return {ok: false, reason: "Transaction reverted."};

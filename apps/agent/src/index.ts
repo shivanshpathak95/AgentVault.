@@ -1,8 +1,16 @@
 import {timingSafeEqual} from "node:crypto";
 import {createServer, type IncomingMessage, type ServerResponse} from "node:http";
-import {addressUrl, formatNativeGasUsdc, fromBaseUnits} from "@agentvault/shared";
+import {
+  addressUrl,
+  formatNativeGasUsdc,
+  fromBaseUnits,
+  redactSecrets,
+  redactUrl,
+  verifyNetwork,
+} from "@agentvault/shared";
 import {ActivityLog} from "./activity.ts";
 import {PaymentIdempotencyStore} from "./idempotency.ts";
+import {QuoteLedger} from "./quotes.ts";
 import {runAgent} from "./agent/loop.ts";
 import type {ToolContext} from "./agent/tools.ts";
 import {createSessionSigner} from "./chain/session-signer.ts";
@@ -31,10 +39,25 @@ const config = loadConfig();
 const registry = loadRegistry();
 const activity = new ActivityLog();
 const idempotency = new PaymentIdempotencyStore();
+const quotes = new QuoteLedger();
 const signer = createSessionSigner(config.chain, config.sessionPrivateKey, config.vaultAddress);
 const serviceClient = createServiceClient(config.serviceBaseUrl);
 
-const toolContext: ToolContext = {config, signer, registry, activity, serviceClient, idempotency};
+// Refuse to start against the wrong chain, a token with unexpected decimals,
+// or an address that is not a vault for that token.
+await verifyNetwork(signer.publicClient, config.chain, config.vaultAddress);
+
+const toolContext: ToolContext = {config, signer, registry, activity, serviceClient, idempotency, quotes};
+
+const isLoopbackBind =
+  config.host === "127.0.0.1" || config.host === "::1" || config.host === "localhost";
+
+/** Host header (with optional port) names a loopback address. */
+function isLoopbackHost(host: string | undefined): boolean {
+  if (!host) return false;
+  const name = host.startsWith("[") ? host.slice(1, host.indexOf("]")) : host.split(":")[0];
+  return name === "localhost" || name === "127.0.0.1" || name === "::1";
+}
 
 /** Constant-time compare, so the token cannot be recovered by timing. */
 function timingSafeEqualStr(a: string, b: string): boolean {
@@ -49,9 +72,6 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     "content-type": "application/json",
     "content-length": Buffer.byteLength(payload),
-    "access-control-allow-origin": "*",
-    "access-control-allow-headers": "content-type",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
   });
   res.end(payload);
 }
@@ -78,8 +98,42 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     const path = url.pathname.replace(/\/+$/, "") || "/";
 
+    // ---- Browser-origin defences -------------------------------------------
+    //
+    // SECURITY: binding to loopback does not stop a malicious page open in the
+    // operator's own browser. Previously every response carried
+    // `Access-Control-Allow-Origin: *` and the body parser ignored
+    // content-type, so any website could send a no-preflight `text/plain` POST
+    // to http://127.0.0.1:8787/api/run and make this process spend.
+    //
+    //  - CORS is granted only to configured console origins.
+    //  - A browser request carrying a foreign Origin is refused outright.
+    //  - Spending requests must be application/json, which forces a CORS
+    //    preflight that a foreign origin cannot pass.
+    //  - On loopback, the Host header must be loopback too, which defeats DNS
+    //    rebinding (attacker.com resolving to 127.0.0.1).
+    const origin = req.headers.origin?.replace(/\/+$/, "");
+    const originAllowed = origin !== undefined && config.allowedOrigins.includes(origin);
+    if (originAllowed) {
+      res.setHeader("access-control-allow-origin", origin);
+      res.setHeader("access-control-allow-headers", "content-type, authorization");
+      res.setHeader("access-control-allow-methods", "GET,POST,OPTIONS");
+    }
+    res.setHeader("vary", "Origin");
+
+    if (origin !== undefined && !originAllowed) {
+      sendJson(res, 403, {error: "Origin not allowed."});
+      return;
+    }
+
+    if (isLoopbackBind && !isLoopbackHost(req.headers.host)) {
+      sendJson(res, 403, {error: "Host not allowed."});
+      return;
+    }
+
     if (req.method === "OPTIONS") {
-      sendJson(res, 204, {});
+      res.writeHead(204);
+      res.end();
       return;
     }
 
@@ -145,8 +199,16 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
             return;
           }
         }
+        if (!(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+          sendJson(res, 415, {error: "Content-Type must be application/json."});
+          return;
+        }
         const body = await readJson(req);
         const prompt = (body as {prompt?: unknown} | null)?.prompt;
+        if (typeof prompt === "string" && prompt.length > 4000) {
+          sendJson(res, 413, {error: "Prompt too long (max 4000 characters)."});
+          return;
+        }
         if (typeof prompt !== "string" || prompt.trim() === "") {
           sendJson(res, 400, {error: 'Missing "prompt".'});
           return;
@@ -159,7 +221,9 @@ const server = createServer((req: IncomingMessage, res: ServerResponse) => {
 
       sendJson(res, 404, {error: "Not found."});
     } catch (err) {
-      sendJson(res, 500, {error: err instanceof Error ? err.message : String(err)});
+      // Never echo the RPC URL: hosted endpoints embed API keys in it.
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 500, {error: redactSecrets(message, config.chain.rpcUrl)});
     }
   })();
 });
@@ -193,6 +257,7 @@ server.listen(config.port, config.host, () => {
       }
     })
     .catch((err: unknown) => {
-      console.warn(`!  Could not read gas balance from ${config.chain.rpcUrl}:`, err);
+      console.warn(`!  Could not read gas balance from ${redactUrl(config.chain.rpcUrl)}.`);
+      void err;
     });
 });

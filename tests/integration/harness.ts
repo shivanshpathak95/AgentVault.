@@ -260,3 +260,66 @@ export async function startService(
 }
 
 export {ANVIL_RPC};
+
+/**
+ * Launch the REAL agent runtime process against the local chain.
+ *
+ * ANTHROPIC_API_KEY is a placeholder: the tests that use this process exercise
+ * only the HTTP security boundary and the boot-time network checks, and every
+ * request they send is refused before any model call is made.
+ */
+export function spawnAgent(
+  d: Deployment,
+  port: number,
+  overrides: Record<string, string> = {},
+): {proc: ChildProcess; output: () => string} {
+  let out = "";
+  const proc = spawn("node", [join(ROOT, "apps", "agent", "src", "index.ts")], {
+    env: {
+      ...process.env,
+      AGENT_PORT: String(port),
+      AGENT_SESSION_PRIVATE_KEY: AGENT_KEY,
+      ANTHROPIC_API_KEY: "placeholder-never-called",
+      VAULT_ADDRESS: d.vault,
+      ARC_CHAIN_ID: String(LOCAL_CHAIN_ID),
+      ARC_NETWORK_NAME: "Anvil",
+      ARC_RPC_URL: ANVIL_RPC,
+      ARC_EXPLORER_URL: "http://localhost/explorer",
+      USDC_ADDRESS: d.usdc,
+      USDC_DECIMALS: String(d.usdcDecimals),
+      SERVICE_BASE_URL: "http://127.0.0.1:8799",
+      WEATHER_SERVICE_ADDRESS: d.weatherRecipient,
+      RESEARCH_SERVICE_ADDRESS: d.researchRecipient,
+      ...overrides,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  proc.stdout?.on("data", (c) => (out += String(c)));
+  proc.stderr?.on("data", (c) => (out += String(c)));
+  return {proc, output: () => out};
+}
+
+export async function waitForHttp(url: string, timeoutMs = 20_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(url);
+      if (res.status > 0) return true;
+    } catch {
+      /* not up */
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  return false;
+}
+
+export function exited(proc: ChildProcess, timeoutMs = 20_000): Promise<number | null> {
+  return new Promise((resolve) => {
+    if (proc.exitCode !== null) return resolve(proc.exitCode);
+    const t = setTimeout(() => resolve(null), timeoutMs);
+    proc.on("exit", (code) => {
+      clearTimeout(t);
+      resolve(code);
+    });
+  });
+}

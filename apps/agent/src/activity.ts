@@ -33,6 +33,25 @@ export class ActivityLog {
     return full;
   }
 
+  /**
+   * Attach the service outcome to the payment that bought it.
+   *
+   * A payment that settled and a service that then failed to deliver are two
+   * separate facts. The payment is NOT reversed and must not be shown as
+   * such; this records the delivery failure alongside it.
+   */
+  annotateService(
+    reference: string,
+    outcome: {serviceStatus: "delivered" | "failed"; serviceMessage?: string},
+  ): ActivityEntry | undefined {
+    const entry = this.#entries.find((e) => e.reference === reference && e.status === "executed");
+    if (!entry) return undefined;
+    entry.serviceStatus = outcome.serviceStatus;
+    if (outcome.serviceMessage !== undefined) entry.serviceMessage = outcome.serviceMessage;
+    console.log(JSON.stringify({event: "activity.service", id: entry.id, ...outcome}));
+    return entry;
+  }
+
   /** Most recent first. */
   list(limit = 50): ActivityEntry[] {
     return this.#entries.slice(0, Math.max(0, limit));

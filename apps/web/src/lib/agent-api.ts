@@ -111,7 +111,8 @@ export const agentApi = {
 
 /** Shape of the settlement facts a tool result carries, for the detail panel. */
 export interface PaymentToolResult {
-  status?: "executed" | "rejected" | "failed";
+  status?: "executed" | "rejected" | "failed" | "unconfirmed";
+  stage?: string;
   txHash?: Hex;
   explorerUrl?: string;
   amountPaid?: string;

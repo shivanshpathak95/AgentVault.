@@ -18,8 +18,10 @@ import type {PaymentResult} from "./payments.ts";
  *   rejected   -> NOT cached. The contract refused and no funds moved, so a
  *                 later retry (after the operator raises a limit, say) is
  *                 legitimate and must be allowed to reach the chain.
- *   failed     -> NOT cached. Submission never completed; retrying is the
- *                 correct response to a transient RPC fault.
+ *   failed     -> NOT cached. Nothing settled (never sent, or mined and
+ *                 reverted); retrying is the correct response.
+ *   unconfirmed-> cached. A transaction was sent and may still settle;
+ *                 resubmitting could pay twice.
  *
  * This is process-local. A restart forgets in-flight work, and a second agent
  * process would not share it — both are acceptable for a single-process MVP and
@@ -39,9 +41,11 @@ export class PaymentIdempotencyStore {
 
     const promise = (async () => {
       const result = await fn();
-      // Only a completed payment is permanent. Refusals and submission
-      // failures stay retryable.
-      if (result.status === "executed") this.#settled.set(reference, result);
+      // Refusals and failures stay retryable. An unconfirmed payment may still settle — resubmitting would risk
+      // paying twice — so it is pinned exactly like a settled one.
+      if (result.status === "executed" || result.status === "unconfirmed") {
+        this.#settled.set(reference, result);
+      }
       return result;
     })();
 

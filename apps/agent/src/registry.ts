@@ -1,8 +1,10 @@
 import {
   SERVICE_CATALOG,
   SERVICE_IDS,
+  USDC_ERC20_DECIMALS,
   isServiceId,
   requiredAddress,
+  toBaseUnits,
   type ServiceDescriptor,
   type ServiceId,
 } from "@agentvault/shared";
@@ -78,6 +80,7 @@ export function assertQuoteMatchesRegistry(
   service: RegisteredService,
   quote: {payTo: Address; token: Address; priceUsdc: string; serviceId: string},
   expectedToken: Address,
+  decimals: number = USDC_ERC20_DECIMALS,
 ): void {
   if (quote.serviceId !== service.id) {
     throw new QuoteMismatchError(
@@ -99,7 +102,19 @@ export function assertQuoteMatchesRegistry(
     );
   }
 
-  if (quote.priceUsdc !== service.priceUsdc) {
+  // Compare in integer base units, not strings: "0.010" and "0.01" are the
+  // same price, and a decimal string is never trusted as an amount.
+  let quoted: bigint;
+  let registered: bigint;
+  try {
+    quoted = toBaseUnits(quote.priceUsdc, decimals);
+    registered = toBaseUnits(service.priceUsdc, decimals);
+  } catch {
+    throw new QuoteMismatchError(
+      `${service.name} quoted an unparseable price ${JSON.stringify(quote.priceUsdc)}.`,
+    );
+  }
+  if (quoted !== registered) {
     throw new QuoteMismatchError(
       `${service.name} quoted ${quote.priceUsdc} USDC but the registered price is ` +
         `${service.priceUsdc} USDC. Refusing a price that changed without the operator.`,

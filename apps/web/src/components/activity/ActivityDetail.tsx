@@ -1,6 +1,17 @@
 "use client";
 
-import {REJECTION_EXPLANATION, type ActivityEntry} from "@agentvault/shared";
+import {REJECTION_EXPLANATION, type ActivityEntry, type PaymentStage} from "@agentvault/shared";
+
+/** Where the attempt stopped, in words an operator can act on. */
+const STAGE_LABEL: Record<PaymentStage, string> = {
+  backend_validation: "Refused by the agent backend before any chain call",
+  contract_preview: "Refused by the contract's previewPay (read-only, no transaction)",
+  contract_simulation: "Refused by the contract in simulation (no transaction sent)",
+  submission_error: "Could not be sent to the network",
+  onchain_revert: "Mined, then reverted by the contract",
+  awaiting_receipt: "Sent; confirmation not observed",
+  confirmed: "Confirmed on chain",
+};
 import {Icon} from "@/components/ui/Icon";
 import {AddressChip, Callout, StatusPill} from "@/components/ui/Panel";
 import {chainConfig} from "@/lib/config";
@@ -86,7 +97,17 @@ export function ActivityDetail({
             Policy decision
           </h3>
           <div className="px-4 py-3">
-            {entry.status === "executed" ? (
+            {entry.stage ? (
+              <p className="mb-2 text-[11px] text-ink-subtle">
+                Stage: <span className="text-ink-muted">{STAGE_LABEL[entry.stage]}</span>
+              </p>
+            ) : null}
+            {entry.status === "unconfirmed" ? (
+              <Callout tone="warn" title="Unconfirmed — do not retry">
+                {entry.message ??
+                  "The transaction was sent but its receipt was not observed. It may still settle. Check the explorer before doing anything else."}
+              </Callout>
+            ) : entry.status === "executed" ? (
               <Callout tone="allow" title="Permitted">
                 The contract ran every policy check and released the funds.
               </Callout>
@@ -129,6 +150,30 @@ export function ActivityDetail({
           </section>
         ) : null}
 
+        {entry.status === "executed" ? (
+          <section>
+            <h3 className="border-b border-line bg-raised/40 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
+              Service execution
+            </h3>
+            <div className="px-4 py-3">
+              {entry.serviceStatus === "delivered" ? (
+                <Callout tone="allow" title="Delivered">
+                  The service verified this payment on chain and returned its result.
+                </Callout>
+              ) : entry.serviceStatus === "failed" ? (
+                <Callout tone="warn" title="Paid, but the service did not deliver">
+                  {entry.serviceMessage ?? "The service refused or failed."} The payment above
+                  settled and was <span className="text-ink">not</span> reversed.
+                </Callout>
+              ) : (
+                <p className="text-[11px] text-ink-subtle">
+                  No delivery recorded yet for this payment.
+                </p>
+              )}
+            </div>
+          </section>
+        ) : null}
+
         <section>
           <h3 className="border-b border-line bg-raised/40 px-4 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-subtle">
             Transaction
@@ -136,6 +181,12 @@ export function ActivityDetail({
           <div className="px-4 py-3">
             {hasTx ? (
               <div className="flex flex-col gap-2">
+                {entry.stage === "onchain_revert" ? (
+                  <p className="text-[11px] leading-5 text-ink-subtle">
+                    This transaction exists and spent gas, but reverted: no USDC moved, and no
+                    PaymentExecuted log survives on chain.
+                  </p>
+                ) : null}
                 <code className="tnum block break-all rounded-md border border-line bg-raised px-2 py-1.5 text-[11px] text-ink-muted">
                   {entry.txHash}
                 </code>

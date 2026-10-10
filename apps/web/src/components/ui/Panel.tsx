@@ -188,13 +188,22 @@ export function AddressChip({
 export function StatusPill({
   status,
 }: {
-  status: "executed" | "rejected" | "failed" | "pending" | "active" | "inactive";
+  status:
+    | "executed"
+    | "rejected"
+    | "failed"
+    | "unconfirmed"
+    | "pending"
+    | "active"
+    | "inactive";
 }) {
   const map = {
     executed: {label: "Settled", cls: "border-allow-soft bg-allow-soft/25 text-allow"},
     active: {label: "Active", cls: "border-allow-soft bg-allow-soft/25 text-allow"},
     rejected: {label: "Blocked by policy", cls: "border-deny-soft bg-deny-soft/25 text-deny"},
     failed: {label: "Failed", cls: "border-warn-soft bg-warn-soft/25 text-warn"},
+    // Submitted, receipt not observed. Deliberately NOT styled as success.
+    unconfirmed: {label: "Unconfirmed", cls: "border-warn-soft bg-warn-soft/25 text-warn"},
     pending: {label: "Pending", cls: "border-line bg-raised text-ink-muted pending-pulse"},
     inactive: {label: "Inactive", cls: "border-line bg-raised text-ink-subtle"},
   } as const;

@@ -226,9 +226,8 @@ contract AgentVault is IAgentVault {
         if (amount == 0) revert ZeroAmount();
         if (amount > s.maxPerTx) revert ExceedsMaxPerTx(amount, s.maxPerTx);
 
-        // 7. Daily ceiling, against a freshly rolled window.
-        uint64 today = uint64(block.timestamp / 1 days);
-        uint128 spent = s.windowDay == today ? s.spentInWindow : 0;
+        // 7. Daily ceiling, against a forward-only window.
+        (uint64 day, uint128 spent) = _window(s);
         uint128 remaining = s.dailyLimit > spent ? s.dailyLimit - spent : 0;
         if (amount > remaining) revert DailyLimitExceeded(amount, remaining);
 
@@ -247,7 +246,7 @@ contract AgentVault is IAgentVault {
         // transaction reverts and this log is discarded with it — a surviving
         // PaymentExecuted always implies a completed transfer.
         uint128 newSpent = spent + uint128(amount);
-        s.windowDay = today;
+        s.windowDay = day;
         s.spentInWindow = newSpent;
         emit PaymentExecuted(msg.sender, to, token, amount, intentHash, newSpent);
 
@@ -262,6 +261,26 @@ contract AgentVault is IAgentVault {
     ///      added without touching policy logic, events or the frontend.
     function payWithIntent(PaymentIntent calldata, bytes calldata) external pure {
         revert NotImplemented();
+    }
+
+    // -------------------------------------------------------------------------
+    // Daily window
+    // -------------------------------------------------------------------------
+
+    /// @dev The accounting window a payment at the current timestamp falls in.
+    ///
+    ///      UTC calendar-day buckets, rolled FORWARD ONLY. Arc block timestamps
+    ///      are proposer wall-clock and are documented as not strictly
+    ///      monotonic. A rule of "the day differs, so reset the budget" would
+    ///      also reset on a backwards step, and a clock oscillating across
+    ///      midnight could then reset it every block — an earlier version of
+    ///      this contract allowed 6x the daily limit that way (see
+    ///      AgentVaultWindow.t.sol). A timestamp that falls in an earlier day
+    ///      than the recorded window is treated as still inside that window.
+    function _window(Session storage s) private view returns (uint64 day, uint128 spent) {
+        uint64 today = uint64(block.timestamp / 1 days);
+        if (today > s.windowDay) return (today, 0);
+        return (s.windowDay, s.spentInWindow);
     }
 
     // -------------------------------------------------------------------------
@@ -302,7 +321,7 @@ contract AgentVault is IAgentVault {
         // Report 0 rather than a notional limit for any session that cannot
         // spend, so no caller can render a misleading "budget remaining".
         if (_paused || !s.exists || s.revoked || block.timestamp >= s.expiresAt) return 0;
-        uint128 spent = s.windowDay == uint64(block.timestamp / 1 days) ? s.spentInWindow : 0;
+        (, uint128 spent) = _window(s);
         return s.dailyLimit > spent ? s.dailyLimit - spent : 0;
     }
 
@@ -330,7 +349,7 @@ contract AgentVault is IAgentVault {
         if (amount == 0) return (false, RejectionReason.ZERO_AMOUNT);
         if (amount > s.maxPerTx) return (false, RejectionReason.EXCEEDS_MAX_PER_TX);
 
-        uint128 spent = s.windowDay == uint64(block.timestamp / 1 days) ? s.spentInWindow : 0;
+        (, uint128 spent) = _window(s);
         uint128 remaining = s.dailyLimit > spent ? s.dailyLimit - spent : 0;
         if (amount > remaining) return (false, RejectionReason.DAILY_LIMIT_EXCEEDED);
 

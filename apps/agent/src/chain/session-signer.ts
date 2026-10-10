@@ -132,6 +132,9 @@ export function createSessionSigner(
       return publicClient.waitForTransactionReceipt({
         hash: txHash,
         confirmations: ARC_CONFIRMATIONS,
+        // Bounded: an unbounded wait would hang the agent run. A timeout is
+        // reported as "unconfirmed", never as failure — see payments.ts.
+        timeout: 60_000,
       });
     },
 
