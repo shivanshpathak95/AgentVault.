@@ -16,7 +16,7 @@ A human operator funds a vault and defines a spending policy **on chain**. An AI
 gets a *restricted session key* and can **request** payments. The `AgentVault` contract
 independently decides whether each one is permitted.
 
-The language model is never the security boundary. Compromising the AI, its prompt, its
+The language model is never the security boungit dary. Compromising the AI, its prompt, its
 process and its private key — all at once — still cannot move more USDC than the human
 authorised, to anyone the human did not name, after the human's deadline, or once the
 human pressed revoke.
